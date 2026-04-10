@@ -1,0 +1,11 @@
+.data
+.vscode
+*cache*
+.tmp
+test
+.results
+imgs/test*
+imgs/gif*
+slurm*
+*.sh
+*.out
