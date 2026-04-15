@@ -20,11 +20,11 @@ if not os.path.exists(RESULTS_FOLDER):
 
 def training_step(model, optimizer, criterion, data, train_mask):
   model.train()
-  optimizer.zero_grad()  
+  optimizer.zero_grad()
   out, dirichlet_energy = model(data)  # Perform a single forward pass.
-  loss = criterion(out[train_mask], data.y[train_mask]) 
-  loss.backward()   
-  optimizer.step()  
+  loss = criterion(out[train_mask], data.y[train_mask])
+  loss.backward()
+  optimizer.step()
   return loss
   
 
@@ -134,26 +134,12 @@ def main(options):
       no_sharing=options["no_sharing"],
       layer_norm=options["layer_norm"]
     ).to(device)
-    
+
     if options["verbose"]:
       print("Model")
       print(f'| num. params: {colortext(compute_num_params(model), "c")}')
-    #I added this new
-    optimizer = getattr(torch.optim, options["optimizer"])(
-          filter(lambda p: p.requires_grad, model.parameters()),
-          lr=options["learning_rate"],
-          weight_decay=options["weight_decay"]
-      )
 
-
-    #this is orginal code
-    #optimizer = getattr(torch.optim, options["optimizer"])(
-    #  model.parameters(),
-    #  lr=options["learning_rate"],
-    #  weight_decay=options["weight_decay"]
-    #)
-
-
+    optimizer = getattr(torch.optim, options["optimizer"])(model.parameters(),lr=options["learning_rate"],weight_decay=options["weight_decay"])
 
     train_mask = dataset[0].train_mask[:, nsplit].to(bool)
     val_mask = dataset[0].val_mask[:, nsplit].to(bool)
@@ -161,13 +147,9 @@ def main(options):
     with tqdm.trange(1, options["num_epochs"]+1) as progress:
       early_stopping_counter = 0 #counter for early stopping
       for epoch in progress:
-        loss = training_step(
-          data=dataset[0].to(device),
-          model=model, 
-          optimizer=optimizer, 
-          criterion=criterion, 
-          train_mask=train_mask, 
-        )
+
+
+        loss = training_step(data=dataset[0].to(device),model=model, optimizer=optimizer, criterion=criterion, train_mask=train_mask, )
         with torch.no_grad():
           evaluation_metrics = collapse(
             evaluate(
@@ -245,14 +227,14 @@ if __name__=="__main__":
     parser.add_argument('--layer_norm', action="store_true", help="Apply layer normalization")
     parser.add_argument('--hidden_channels', type=int, default=64, help='Number of hidden channels (default 64).') 
     parser.add_argument('--num_layers', type=int, default=3, help='Number of layers (default 3).') 
-    parser.add_argument('--exponent', type=float_or_learnable, default="learnable", help='Value of \alpha (float or "learnable", default "learnable").') 
+    parser.add_argument('--exponent', type=float_or_learnable, default= 1.0, help='Value of \alpha (float or "learnable", default "learnable").')
     parser.add_argument('--spectral_shift', type=float_or_learnable, default=0.0, help='Value of spectral_shift (float (default 0.0).') 
-    parser.add_argument('--step_size', type=float_or_learnable, default="learnable", help='Value of step_size (float or "learnable", default "learnable").') 
+    parser.add_argument('--step_size', type=float_or_learnable, default=1.0, help='Value of step_size (float or "learnable", default "learnable").')
     parser.add_argument('--channel_mixing', type=str, default="d", help='Which parametrization of channel_mixing to use: "d" for diagonal, "s" for symmetric, "f" for full. (defaul "d")') 
     parser.add_argument('--no_sharing', dest="no_sharing", action='store_true', help='If channel mixing matrix should be different for each layer.') 
     parser.add_argument('--init', type=str, default="normal", help='Which initialization to use for channel_mixing. Check the ones implemented in torch.nn.init. (default "normal")') 
     parser.add_argument('-r', '--real', dest="real", action='store_true', help='The dtype of learnable parameters will be real.') 
-    parser.add_argument('--equation', type=str, default="ms", choices=["ms", "s", "mh", "h"], help='Equation to solve: "h" for heat eq., "mh" for minus heat eq., "s" for Schroedinger eq., "ms" "s" for minus Schroedinger eq. (default "ms")') 
+    parser.add_argument('--equation', type=str, default="h", choices=["ms", "s", "mh", "h"], help='Equation to solve: "h" for heat eq., "mh" for minus heat eq., "s" for Schroedinger eq., "ms" "s" for minus Schroedinger eq. (default "ms")')
     parser.add_argument('--encoder_layers', type=int, default=1, help='Number of encoding layers before the neural ODE (default 1).') 
     parser.add_argument('--decoder_layers', type=int, default=1, help='Number of decoding layers after the neural ODE (default 1).') 
     parser.add_argument('--input_dropout', type=float, default=0.0, help='Dropout of the first encoding layer (default 0.).') 
@@ -262,12 +244,12 @@ if __name__=="__main__":
     parser.add_argument('--learning_rate', type=float, default=1e-2, help='Learning rate (default 1e-2).')
     parser.add_argument('--weight_decay', type=float, default=5e-4, help='Weight decay (default 5e-4).')
     # Training
-    parser.add_argument('--num_epochs', type=int, default=1000, help='Maximal number of epochs (default 1000).')
-    parser.add_argument('--patience', type=int, default=200, help='Patience for early stopping: stops after "patience" consecutive epochs in which the validation accuracy did not increase. (default 200)')
+    parser.add_argument('--num_epochs', type=int, default=3000, help='Maximal number of epochs (default 1000).')
+    parser.add_argument('--patience', type=int, default=500, help='Patience for early stopping: stops after "patience" consecutive epochs in which the validation accuracy did not increase. (default 200)')
     # Num split
     parser.add_argument('--num_split', type=list, default=range(10), help='Which splits to consider (default range(10))')
     #Ablation
-    parser.add_argument('--gcn', dest="gcn", action='store_true', help='The model is converted to a gcn implementing the (possibly) fractional sna.') 
+    parser.add_argument('--gcn', dest="gcn", action='store_true', help='The model is converted to a gcn implementing the (possibly) fractional sna.')
 
     options = vars(parser.parse_args())
     

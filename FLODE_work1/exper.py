@@ -71,69 +71,60 @@ CONFIGS = {
     }
 }
 
+dataset = "Cora"
+Ns = [5, 10, 15, 30]
+dts = [round(0.1 * i, 1) for i in range(1, 11)]   # 0.1 to 1.0
+#Ns = [30]
+#dts = [0.7,0.8,0.9,1.0]
 # =====================================================================
-# 2. Select datasets to run
-# =====================================================================
-
-datasets = ["Cora"]
-number_Layer = ["4"]
-
-# =====================================================================
-# 3. Create master results directory
+# 3. Organized folder structure
 # =====================================================================
 
-#results_root = "results_best_approx_activation_Tanh_updated"
-results_root = "Experiment"
-#results_root = "results_best_approx_activation_LeakyReLU_updated"
-#results_root = "results_best_approx"
-os.makedirs(results_root, exist_ok=True)
+root_dir = "Experiment_1"
+method_dir = os.path.join(root_dir, "FE")
+dataset_dir = os.path.join(method_dir, "Cora_non_activated_L_exp_1")
+
+os.makedirs(dataset_dir, exist_ok=True)
 
 # =====================================================================
-# 4. Run all experiments
+# 4. Run experiments
 # =====================================================================
 
-for dataset in datasets:
-#for cora, we do not need number of layers = 2, as it is already done!!.
-#for toloker, we do not need number of layers =2, as it is already done!!.
-    print("\n" + "="*80)
-    print(f"Running dataset: {dataset}")
-    print("="*80)
+config = CONFIGS[dataset]
 
+for N in Ns:
+    N_dir = os.path.join(dataset_dir, f"N_{N}")
+    os.makedirs(N_dir, exist_ok=True)
 
+    print("\n" + "=" * 80)
+    print(f"Running N = {N}")
+    print("=" * 80)
 
-    # Create folder for this dataset
-    dataset_dir = os.path.join(results_root, f"{dataset}_best_approx_high_layers_no_activation")
-    #dataset_dir = os.path.join(results_root, f"{dataset}_best_approx")
-    os.makedirs(dataset_dir, exist_ok=True)
+    for dt in dts:
+        dt_dir = os.path.join(N_dir, f"dt_{dt:.1f}")
+        os.makedirs(dt_dir, exist_ok=True)
 
-    for layer in number_Layer:
-        #print("\n" + "=" * 80)
-        print(f"Running number of layers: {layer}")
-        #print("=" * 80)
+        logfile = os.path.join(dt_dir, "run_output.txt")
 
-    # Save file inside the dataset folder
-    #outfile = os.path.join(dataset_dir, "run_output_num_layers_3.txt")
-        outfile = os.path.join(dataset_dir, f"run_output_number_layers_{layer}.txt")
-
-        # Start building the command
-        #cmd = ["python", "node_classification.py", "--dataset", dataset, "--equation", "h", "--num_layers", "3"]
-        cmd = ["python", "node_classification.py", "--dataset", dataset, "--equation", "h", "--num_layers", layer, "--step_size", "1.0","--exponent","1.0"]
-        #cmd = ["python", "node_classification.py", "--dataset", dataset]
-
-        # Add dataset-specific args
-        config = CONFIGS[dataset]
+        cmd = [
+            "python", "node_classification.py",
+            "--dataset", dataset,
+            "--equation", "h",
+            "--num_layers", str(N),
+            "--step_size", str(dt),
+            "--exponent", "1.0"
+        ]
 
         for key, value in config.items():
             cmd.append(key)
-            if value != "":   # flags without value
+            if value != "":
                 cmd.append(str(value))
 
-        # Run and save logs
-        with open(outfile, "w") as f:
-            subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT)
+        print(f"Running: dataset={dataset}, N={N}, dt={dt:.1f}, T={N*dt:.1f}")
 
-            print(f"  ✅ Results saved to {outfile}")
+        with open(logfile, "w") as f:
+            subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT, check=True)
 
-print("\n🎯 ALL EXPERIMENTS FINISHED SUCCESSFULLY! \n")
+        print(f"Saved log to: {logfile}")
 
-
+print("\nAll experiments finished.\n")

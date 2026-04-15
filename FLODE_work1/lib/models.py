@@ -27,25 +27,25 @@ def compute_num_params(model):
       else:
         num_params += value.numel()
   return num_params
-  
+
 class fLode(torch.nn.Module):
     r'''
     '''
     def __init__(
-      self, 
-      in_channels: int, 
-      hidden_channels: int, 
-      out_channels: int, 
+      self,
+      in_channels: int,
+      hidden_channels: int,
+      out_channels: int,
       num_layers: int,
-      dtype=torch.cfloat, 
+      dtype=torch.cfloat,
       eq: str="ms",
-      spectral_shift=0., 
-      exponent="learnable", 
-      step_size="learnable",   
-      channel_mixing="d", 
-      input_dropout: float=0, 
-      decoder_dropout: float=0, 
-      init: str="normal", 
+      spectral_shift=0.,
+      exponent="learnable",
+      step_size="learnable",
+      channel_mixing="d",
+      input_dropout: float=0,
+      decoder_dropout: float=0,
+      init: str="normal",
       encoder_layers: int = 1,
       decoder_layers: int = 2,
       gcn: bool=False,
@@ -53,7 +53,7 @@ class fLode(torch.nn.Module):
       layer_norm=False
     ):
         super().__init__()
-        
+
         self.no_sharing=no_sharing
         self.in_channels = in_channels
         self.hidden_channels = hidden_channels
@@ -65,97 +65,167 @@ class fLode(torch.nn.Module):
         self.dtype = dtype
         self.eq = eq
         self.gcn=gcn
-        if self.eq=="h":
-          self.iu = torch.ones(1, device=device)
-        elif self.eq=="mh":
+        if self.eq=="h":  #this is a minus heat equation, (-L)
           self.iu = -torch.ones(1, device=device)
+        #elif self.eq=="mh":
+        #  self.iu = -torch.ones(1, device=device)
         elif self.eq=="s":
           self.iu = torch.complex(torch.zeros(1, device=device), torch.ones(1, device=device))
-        elif self.eq=="ms":
-          self.iu = torch.complex(torch.zeros(1, device=device), -torch.ones(1, device=device))
-        
+        #elif self.eq=="ms":
+        #  self.iu = torch.complex(torch.zeros(1, device=device), -torch.ones(1, device=device))
+
         if exponent=="learnable":
           self.exponent = torch.nn.Parameter(
             torch.ones(num_layers if no_sharing else 1, device=device)
           )
         else:
           self.exponent = torch.tensor(exponent, device=device)
-          
+
         if spectral_shift=="learnable":
           self.spectral_shift = torch.nn.Parameter(
             torch.zeros(1, device=device, dtype=self.dtype)
           )
         else:
           self.spectral_shift = torch.tensor(spectral_shift, device=device, dtype=self.dtype)
-          
+
         if step_size=="learnable":
           self.step_size = torch.nn.Parameter(
             torch.ones(num_layers if no_sharing else 1, device=device, dtype=self.dtype)
           )
         else:
           self.step_size = torch.ones(num_layers if no_sharing else 1, device=device, dtype=self.dtype)*step_size
-          
+
         assert channel_mixing in ["d", "s", "f"], f'Channel mixing {channel_mixing} not implemented.'
         self.channel_mixing = channel_mixing
         self.W = torch.nn.Parameter(
           torch.zeros((num_layers if no_sharing else 1, hidden_channels, hidden_channels), device=device, dtype=self.dtype)
         )
-        self.dropout=[Dropout(p=d) for d in [input_dropout, decoder_dropout]]
-                      
+
+
+
+
+
+        #this line was there, i have added next line
+        #self.dropout=[Dropout(p=d) for d in [input_dropout, decoder_dropout]]
+
+        #this on is added
+        self.dropout = torch.nn.ModuleList([Dropout(p=input_dropout),Dropout(p=decoder_dropout)])
+
+
+
+
         self.encoder = MLP(
-          in_channels = self.in_channels, 
-          hidden_channels = self.hidden_channels, 
-          out_channels = self.hidden_channels, 
-          num_layers = self.encoder_layers, 
+          in_channels = self.in_channels,
+          hidden_channels = self.hidden_channels,
+          out_channels = self.hidden_channels,
+          num_layers = self.encoder_layers,
           bias = True,
-          with_norm = None, 
-          with_final_activation = False, 
-          dtype = self.dtype, 
+          with_norm = None,
+          with_final_activation = False,
+          dtype = self.dtype,
           dropout = self.dropout[1]
         )
-        
+
         self.decoder = MLP(
-          in_channels = self.hidden_channels, 
-          hidden_channels = self.hidden_channels, 
-          out_channels = self.out_channels, 
-          num_layers = self.decoder_layers, 
+          in_channels = self.hidden_channels,
+          hidden_channels = self.hidden_channels,
+          out_channels = self.out_channels,
+          num_layers = self.decoder_layers,
           bias = True,
-          with_norm = None, 
-          with_final_activation = False, 
-          dtype = self.dtype, 
+          with_norm = None,
+          with_final_activation = False,
+          dtype = self.dtype,
           dropout = self.dropout[1]
         )
-        
+
         # Initialize the parameters
         self.init = init if init[-1]=="_" else init+'_'
         self.reset_parameters()
 
+
+
+
+
+
+
+
+
+
+###this is added and after this has been removed!
     def reset_parameters(self):
-      r'''
-      Useful to initialize the parameters. The channel_mixing matrix is initialized as specified in "init",
-      while the other linear layers as default, i.e., using kaiming_uniform from torch.nn.init.
-      '''
-      if self.dtype is torch.cfloat:
-        getattr(I, self.init)(self.W.real)
-        getattr(I, self.init)(self.W.imag)
-      else:
-        getattr(torch.nn.init, self.init)(self.W)
-      #Default behaviour for other linear layers
-      for name, param in self.named_parameters():
-        if param.requires_grad and (name!="W") and isinstance(param, torch.nn.Linear):
-          fan_in, _ = torch.init._calculate_fan_in_and_fan_out(param.weight)
-          bound = 1 / np.sqrt(fan_in) if fan_in > 0 else 0
-          if self.dtype is torch.cfloat:
-            I.kaiming_uniform_(param.weight.real, a=np.sqrt(5))
-            I.kaiming_uniform_(param.weight.imag, a=np.sqrt(5))
-            if param.bias is not None:
-              I.uniform_(param.bias.real, -bound, bound)
-              I.uniform_(param.bias.imag, -bound, bound)
-          else:
-            I.kaiming_uniform_(param.weight, a=np.sqrt(5))
-            if param.bias is not None:
-              I.uniform_(param.bias, -bound, bound)
-    
+        r'''
+        Initialize channel mixing matrix W and reset encoder/decoder parameters.
+        '''
+
+        # Initialize W
+        if self.dtype is torch.cfloat:
+            getattr(I, self.init)(self.W.real)
+            getattr(I, self.init)(self.W.imag)
+        else:
+            getattr(I, self.init)(self.W)
+
+    #def reset_parameters(self):
+    #    r'''
+    #    Initialize channel mixing matrix W as identity (or diagonal identity)
+    #    and reset encoder/decoder parameters.
+    #    '''
+
+    #    with torch.no_grad():
+
+    #        if self.no_sharing:
+                # W shape: [num_layers, C, C]
+    #            for i in range(self.W.shape[0]):
+    #                self.W[i].zero_()
+
+    #                if self.channel_mixing == "d":
+                        # diagonal case
+    #                    self.W[i].diagonal().fill_(1.0)
+    #                else:
+                        # full / symmetric case
+    #                    self.W[i].copy_(torch.eye(self.hidden_channels, device=self.W.device, dtype=self.W.dtype))
+
+    #        else:
+    #            # W shape: [1, C, C]
+    #            self.W.zero_()
+
+                if self.channel_mixing == "d":
+                    self.W[0].diagonal().fill_(1.0)
+                else:
+                    self.W[0].copy_(torch.eye(self.hidden_channels, device=self.W.device, dtype=self.W.dtype))
+
+
+
+        # Reset encoder and decoder (they handle their own Linear + Norm layers)
+        self.encoder.reset_parameters()
+        self.decoder.reset_parameters()
+
+#### this was original one,
+    #def reset_parameters(self):
+    #  r'''
+    #  Useful to initialize the parameters. The channel_mixing matrix is initialized as specified in "init",
+    #  while the other linear layers as default, i.e., using kaiming_uniform from torch.nn.init.
+    #  '''
+     # if self.dtype is torch.cfloat:
+     #   getattr(I, self.init)(self.W.real)
+     #   getattr(I, self.init)(self.W.imag)
+     # else:
+     #   getattr(torch.nn.init, self.init)(self.W)
+     # #Default behaviour for other linear layers
+     # for name, param in self.named_parameters():
+     #   if param.requires_grad and (name!="W") and isinstance(param, torch.nn.Linear):
+     #     fan_in, _ = torch.init._calculate_fan_in_and_fan_out(param.weight)
+     #     bound = 1 / np.sqrt(fan_in) if fan_in > 0 else 0
+     #     if self.dtype is torch.cfloat:
+     #       I.kaiming_uniform_(param.weight.real, a=np.sqrt(5))
+     #       I.kaiming_uniform_(param.weight.imag, a=np.sqrt(5))
+     #       if param.bias is not None:
+     #         I.uniform_(param.bias.real, -bound, bound)
+     #         I.uniform_(param.bias.imag, -bound, bound)
+     #     else:
+     #       I.kaiming_uniform_(param.weight, a=np.sqrt(5))
+     #       if param.bias is not None:
+     #         I.uniform_(param.bias, -bound, bound)
+
     def parametrize_channel_mixing(self, W):
       r'''
       Useful to parametrize the "channel_mixing" matrix as
@@ -169,13 +239,13 @@ class fLode(torch.nn.Module):
         return (W+W.transpose(0, 1))
       elif self.channel_mixing=="f":
         return (W)
-#new LxW without SVD!!!!! and fixed exp = 1.
+    #new LxW without SVD!!!!! and fixed exp = 1.
     def LxW(self, L, x, W):
         Lx = torch.sparse.mm(L, x)  # use torch.mm(L, x) if L is dense
         LxW = Lx @ self.parametrize_channel_mixing(W)
         return LxW
 
-#old LxW with SVD and input parameters
+    #old LxW with SVD and input parameters
     #def LxW(self, U, S, Vh, x, W, exponent):
      # r'''
      # Compute the right-hand side of the equation.
@@ -194,6 +264,48 @@ class fLode(torch.nn.Module):
         #p = self.activation(p)
         x = x + self.iu * step_size * p
         return x
+
+
+#THIS IS FOR BACKWARD EULER STEP:
+
+    def backward_euler_step(self, L, x, W, step_size):
+        N, C = x.shape
+        Ld = L.to_dense() if L.is_sparse else L
+        I_N = torch.eye(N, dtype=self.dtype, device=x.device)
+        x_next = torch.zeros_like(x)
+
+        for c in range(C):
+            A_c = I_N - self.iu * step_size * W[c, c] * Ld
+            x_next[:, c] = torch.linalg.solve(A_c, x[:, c])
+
+        return x_next
+
+
+
+#tHIS IS FOR CRANK NICOLSON STEP:
+
+    def crank_nicolson_step(self, L, x, W, step_size):
+        N, C = x.shape
+        Ld = L.to_dense() if L.is_sparse else L
+        I_N = torch.eye(N, dtype=self.dtype, device=x.device)
+
+        x_next = torch.zeros_like(x)
+
+        for c in range(C):
+            wc = W[c, c]
+
+            A = I_N - 0.5 * self.iu * step_size * wc * Ld
+            B = I_N + 0.5 * self.iu * step_size * wc * Ld
+
+            b = B @ x[:, c]
+            x_next[:, c] = torch.linalg.solve(A, b)
+
+        return x_next
+
+
+
+
+
 
     def gcn_step(self, L, x, W):
         x = self.iu * self.LxW(L=L, x=x, W=W)
@@ -215,21 +327,21 @@ class fLode(torch.nn.Module):
     #  x = self.iu * self.LxW(U=U, S=S, Vh=Vh, x=x, W=W, exponent=exponent)
     #  return x
 
-    def dirichlet_energy(self, snl, x): 
+    def dirichlet_energy(self, snl, x):
       x=x/x.norm()
       if self.dtype == torch.cfloat:
-        x_herm  = torch.complex( 
-          x.real.transpose(0,1), 
-          -x.imag.transpose(0,1) 
+        x_herm  = torch.complex(
+          x.real.transpose(0,1),
+          -x.imag.transpose(0,1)
         )
       else:
         x_herm = x.transpose(0, 1)
       energy = .5 * torch.trace(x_herm @ torch.sparse.mm(snl, x))
       return energy
-    
-     
+
+
     def forward(self, data):
-      
+
       x = data.x.to(self.dtype)
     #L has been added here,
       L = data.snl.to(self.dtype)
@@ -239,21 +351,19 @@ class fLode(torch.nn.Module):
     #SVD is also calculate here which we will remove two lines from here....
      # U, S, Vh = data.U.to(self.dtype), data.S, data.Vh.to(self.dtype)
      # snl=data.snl.to(self.dtype)
-      
-      energy = torch.zeros(self.num_layers+1, dtype=self.dtype)
-      
+#this is orginal
+      #energy = torch.zeros(self.num_layers+1, dtype=self.dtype)
+#this is new
+      energy = torch.zeros(self.num_layers + 1, dtype=self.dtype, device=x.device)
+
       x = self.dropout[0](x)
       x = self.encoder(x)
       #this line has been replace becuase of SVD
       energy[0]=self.dirichlet_energy(snl=L, x=x)
       #this line has been rmeovde cause of SVD
       #energy[0] = self.dirichlet_energy(snl=snl, x=x)
-      
+
       for nl in np.arange(1, self.num_layers+1):
-    #replacement of self.gcn and se.f.forward euler
-
-
-
       #Both of this for self.gcn and self.forward euler has been replace.
         if self.gcn:
             # replacement of self.gcn and se.f.forward euler
@@ -263,13 +373,9 @@ class fLode(torch.nn.Module):
                 W=self.W[nl - 1] if self.no_sharing else self.W[0]
             )
         else:
-            x = self.forward_euler_step(
-                L=L,
-                x=x,
-                W=self.W[nl - 1] if self.no_sharing else self.W[0],
-                step_size=self.step_size[nl - 1] if self.no_sharing else self.step_size
-            )
-
+            x = self.forward_euler_step(L=L,x=x,W=self.W[nl - 1] if self.no_sharing else self.W[0],step_size=self.step_size[nl - 1] if self.no_sharing else self.step_size )
+            #x = self.backward_euler_step(L=L,x=x,W=self.W[nl - 1] if self.no_sharing else self.W[0],step_size=self.step_size[nl - 1] if self.no_sharing else self.step_size)
+            #x = self.crank_nicolson_step(L=L,x=x,W=self.W[nl - 1] if self.no_sharing else self.W[0],step_size=self.step_size[nl - 1] if self.no_sharing else self.step_size)
 
 
 
@@ -302,11 +408,11 @@ class fLode(torch.nn.Module):
 
       x = self.dropout[1](x)
       x = self.decoder(x)
-      
+
       if self.dtype is torch.cfloat:
         x = x.abs()
       return x, energy
-    
+
 class Dropout(torch.nn.Module):
   def __init__(self, p):
     super().__init__()
@@ -316,7 +422,7 @@ class Dropout(torch.nn.Module):
     if self.training:
         sample = torch.distributions.bernoulli.Bernoulli(1-self.p).sample(x.size()).to(device)
         x = x * sample
-    return x 
+    return x
 class Identity(torch.nn.Module):
     def __init__(self, *args, **kwargs):
         super(Identity, self).__init__()
@@ -335,27 +441,27 @@ class LeakyReLU(torch.nn.Module):
     super().__init__()
     self.activation = torch.nn.LeakyReLU(negative_slope)
     self.dtype = dtype
-    
+
   def forward(self, x):
     if self.dtype == torch.cfloat:
       x = torch.complex(
-        self.activation(x.real), 
+        self.activation(x.real),
         self.activation(x.imag)
-      )  
+      )
     else:
-      x = self.activation(x) 
+      x = self.activation(x)
     return x
 class MLP(torch.nn.Module):
     def __init__(
-      self, 
+      self,
       in_channels,
-      hidden_channels, 
-      out_channels, 
-      num_layers=2, 
-      with_final_activation=True, 
-      with_norm=True, 
-      bias=True, 
-      dtype=torch.cfloat, 
+      hidden_channels,
+      out_channels,
+      num_layers=2,
+      with_final_activation=True,
+      with_norm=True,
+      bias=True,
+      dtype=torch.cfloat,
       dropout=None
     ):
       super().__init__()
@@ -364,14 +470,14 @@ class MLP(torch.nn.Module):
       self.num_layers = num_layers
       self.with_final_activation = with_final_activation
       self.dtype = dtype
-      
+
       self.dropout = dropout
-      
+
       self.layers = torch.nn.ModuleList([
         torch.nn.Linear(
           in_channels if i == 0 else hidden_channels,
           hidden_channels if i < num_layers-1 else out_channels,
-          bias=True if (i == num_layers-1 and not with_final_activation and bias) or (not with_norm) else False, 
+          bias=True if (i == num_layers-1 and not with_final_activation and bias) or (not with_norm) else False,
           dtype = dtype
         )
         for i in range(num_layers)
@@ -382,7 +488,7 @@ class MLP(torch.nn.Module):
         ) if with_norm else Identity()
         for i in range(num_layers)
       ])
-        
+
     def reset_parameters(self):
       for layer, norm in zip(self.layers, self.norms):
         layer.reset_parameters()
