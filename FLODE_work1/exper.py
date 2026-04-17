@@ -112,7 +112,8 @@ for N in Ns:
             "--equation", "h",
             "--num_layers", str(N),
             "--step_size", str(dt),
-            "--exponent", "1.0"
+            "--exponent", "1.0",
+            "--spectral_shift", "0.0"
         ]
 
         for key, value in config.items():
