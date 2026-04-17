@@ -153,52 +153,50 @@ class fLode(torch.nn.Module):
 
 ###this is added and after this has been removed!
     def reset_parameters(self):
-        r'''
-        Initialize channel mixing matrix W and reset encoder/decoder parameters.
-        '''
+    with torch.no_grad():
+        if self.no_sharing:
+            self.W.zero_()
 
-        # Initialize W
-        if self.dtype is torch.cfloat:
-            getattr(I, self.init)(self.W.real)
-            getattr(I, self.init)(self.W.imag)
+            if self.channel_mixing == "d":
+                base = torch.zeros(
+                    self.hidden_channels,
+                    self.hidden_channels,
+                    device=self.W.device,
+                    dtype=self.W.dtype
+                )
+                base.diagonal().fill_(1.0)
+            else:
+                base = torch.eye(
+                    self.hidden_channels,
+                    device=self.W.device,
+                    dtype=self.W.dtype
+                )
+
+            for i in range(self.W.shape[0]):
+                self.W[i].copy_(base)
+
         else:
-            getattr(I, self.init)(self.W)
+            self.W.zero_()
+            if self.channel_mixing == "d":
+                self.W[0].diagonal().fill_(1.0)
+            else:
+                self.W[0].copy_(torch.eye(
+                    self.hidden_channels,
+                    device=self.W.device,
+                    dtype=self.W.dtype
+                ))
 
-    #def reset_parameters(self):
-    #    r'''
-    #    Initialize channel mixing matrix W as identity (or diagonal identity)
-    #    and reset encoder/decoder parameters.
-    #    '''
-
-    #    with torch.no_grad():
-
-    #        if self.no_sharing:
-                # W shape: [num_layers, C, C]
-    #            for i in range(self.W.shape[0]):
-    #                self.W[i].zero_()
-
-    #                if self.channel_mixing == "d":
-                        # diagonal case
-    #                    self.W[i].diagonal().fill_(1.0)
-    #                else:
-                        # full / symmetric case
-    #                    self.W[i].copy_(torch.eye(self.hidden_channels, device=self.W.device, dtype=self.W.dtype))
-
-    #        else:
-    #            # W shape: [1, C, C]
-    #            self.W.zero_()
-
-                if self.channel_mixing == "d":
-                    self.W[0].diagonal().fill_(1.0)
-                else:
-                    self.W[0].copy_(torch.eye(self.hidden_channels, device=self.W.device, dtype=self.W.dtype))
+    self.encoder.reset_parameters()
+    self.decoder.reset_parameters()
+  
 
 
 
-        # Reset encoder and decoder (they handle their own Linear + Norm layers)
-        self.encoder.reset_parameters()
-        self.decoder.reset_parameters()
 
+
+
+
+  
 #### this was original one,
     #def reset_parameters(self):
     #  r'''
