@@ -349,10 +349,13 @@ class fLode(torch.nn.Module):
     #SVD is also calculate here which we will remove two lines from here....
      # U, S, Vh = data.U.to(self.dtype), data.S, data.Vh.to(self.dtype)
      # snl=data.snl.to(self.dtype)
-#this is orginal
-      #energy = torch.zeros(self.num_layers+1, dtype=self.dtype)
-#this is new
-      energy = torch.zeros(self.num_layers + 1, dtype=self.dtype, device=x.device)
+
+
+
+
+      
+      energy = torch.zeros(self.num_layers+1, dtype=self.dtype)
+
 
       x = self.dropout[0](x)
       x = self.encoder(x)
